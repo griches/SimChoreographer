@@ -9,18 +9,22 @@ cache = pathlib.Path('.build/tapper-signing-identity')
 identities = subprocess.check_output(['security', 'find-identity', '-v', '-p', 'codesigning'], text=True)
 if cache.exists():
     identity = cache.read_text().strip()
-    if identity not in identities:
+    if identity != '-' and identity not in identities:
         sys.exit('Saved SimChoreographer signing identity is unavailable. Set TAPPER_SIGNING_IDENTITY explicitly.')
 else:
     matches = re.findall(r'\b([A-F0-9]{40}) "Apple Development:[^"\n]+"', identities)
-    if len(matches) != 1:
-        sys.exit('Set TAPPER_SIGNING_IDENTITY to your Apple Development identity (security find-identity -v -p codesigning).')
-    identity = matches[0]
+    identity = matches[0] if len(matches) == 1 else '-'
+    if identity == '-':
+        print('No unique Apple Development identity found; using ad hoc signing for this local build.', file=sys.stderr)
+        print('A developer certificate is optional. Set TAPPER_SIGNING_IDENTITY to select one.', file=sys.stderr)
     cache.parent.mkdir(exist_ok=True)
     cache.write_text(identity + '\n')
 print(identity)
 PYIDENTITY
 )
+fi
+if [[ "$TAPPER_SIGNING_IDENTITY" == "-" ]]; then
+    printf 'Local ad hoc build: macOS privacy permissions may need reapproval after rebuilding.\n'
 fi
 swift build -c release
 # Sign outside the file-provider-managed source folder: it can reattach

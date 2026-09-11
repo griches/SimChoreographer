@@ -4,24 +4,40 @@ A native macOS app that records clicks, holds, drags, and key presses in an Xcod
 
 ## Build and launch
 
+No Apple Developer membership or signing certificate is required for a local build.
+
 ```sh
 git clone https://github.com/griches/SimChoreographer.git
 cd SimChoreographer
+./scripts/build.sh && open build/SimChoreographer.app
 ```
 
+If you already cloned the repository, update and rebuild inside that folder:
 
 ```sh
-./scripts/build.sh
-open build/SimChoreographer.app
+git pull --ff-only
+./scripts/build.sh && open build/SimChoreographer.app
 ```
 
-Open `Package.swift` in Xcode to edit the project. The build script produces the app bundle and `build/simchoreographerctl`. Use the bundled app for permission setup rather than running the bare Swift executable. The build script automatically selects your Apple Development certificate when exactly one is available and remembers it in `.build/tapper-signing-identity`. Otherwise, set `TAPPER_SIGNING_IDENTITY` explicitly. Rebuilds use a consistent signed identity instead of defaulting to ad hoc signing. Switching from an older ad hoc build requires a one-time permission repair: quit SimChoreographer, remove its old entry with **−** in System Settings → Privacy & Security → Accessibility, then use **+** to add `build/SimChoreographer.app`, enable it, and reopen SimChoreographer. Repeat for Input Monitoring if needed. The app’s **Show this copy in Finder** button identifies the correct bundle. Permission status also refreshes when SimChoreographer becomes active. This is a local development build, not a notarized release.
+The app is created only after the build succeeds. The `&&` prevents trying to open a missing app if a build fails. The build also produces `build/simchoreographerctl`. Open `Package.swift` in Xcode to edit the project; launch the bundled app for permission setup rather than the bare Swift executable.
+
+### Signing and macOS permissions
+
+The build script uses your Apple Development certificate if exactly one is available. Otherwise, it automatically creates an **ad hoc local build**. It remembers this choice in `.build/tapper-signing-identity`. Ad hoc builds work locally, but macOS privacy permissions may need reapproval after rebuilding. A consistent development certificate avoids changing the app identity on every build.
+
+To explicitly select a certificate, run `security find-identity -v -p codesigning`, then supply the certificate name or hash:
+
+```sh
+TAPPER_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build.sh
+```
+
+To force an ad hoc build, use `TAPPER_SIGNING_IDENTITY=- ./scripts/build.sh`. The older `TAPPER_` environment-variable name is retained for compatibility. Signing certificates and the local identity cache are not included in this repository. These are local development builds, not notarized releases.
+
+If changing signing identities leaves an enabled permission unrecognised, follow the targeted reset instructions below. The app’s **Show this copy in Finder** button identifies the correct bundle; permission status refreshes when the app becomes active.
 
 ### Compatibility with Tapper
 
 SimChoreographer was previously named Tapper. Its bundle identifier (`com.garyriches.tapper`), internal executable name (`Tapper`), and Application Support folder (`Tapper`) are intentionally retained so existing recordings and privacy permissions carry forward. Swift target names also retain their original names. `build/tapperctl` remains available for existing agent scripts; new scripts can use `build/simchoreographerctl`. The build script makes the old `build/Tapper.app` path an alias for the renamed app.
-
-If you have no development signing certificate, `TAPPER_SIGNING_IDENTITY=- ./scripts/build.sh` produces an ad hoc local build. Its permissions may need resetting after each rebuild; a consistent development certificate is recommended for regular use. Signing certificates and the local identity cache are not included in this repository.
 
 ## If enabled permissions are still rejected
 
