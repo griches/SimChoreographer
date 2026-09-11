@@ -13,6 +13,7 @@ do {
         simchoreographerctl status
         simchoreographerctl run <name-or-uuid> [--delay seconds] [--timeout seconds] [--strict-elements]
         simchoreographerctl key <key-or-shortcut> [--window "exact Simulator title"] [--timeout seconds]
+        simchoreographerctl text "string to enter" [--window "exact Simulator title"] [--timeout seconds]
         simchoreographerctl stop
 
         Key examples: return, tab, escape, space, backspace, left, shift+tab, cmd+a.
@@ -21,16 +22,18 @@ do {
         equals, minus, leftbracket, rightbracket, quote, semicolon, backslash,
         comma, slash, period, grave. Modifiers: cmd, ctrl, option/alt, shift, fn.
         Names are case-insensitive physical US key positions; use shift+a for Shift+A.
-        With multiple Simulator windows, key requires --window.
+        text sends Unicode text to the focused input without using the clipboard.
+        Text limit: 10,000 UTF-16 units. With multiple Simulator windows, key/text require --window.
 
         Open SimChoreographer first. Local agent control is enabled by default.
-        run and key wait for completion; exit 0 = success, 1 = failure, 2 = timeout.
+        run, key and text wait for completion; exit 0 = success, 1 = failure, 2 = timeout.
         Timeout does not cancel playback. Use simchoreographerctl stop to cancel.
         """)
         exit(0)
     }
     let action = args[0]
-    guard ["list", "status", "run", "stop", "key"].contains(action) else { throw TapperError("Unknown command; use --help") }
+    guard ["list", "status", "run", "stop", "key", "text"].contains(action) else { throw TapperError("Unknown command; use --help") }
+    var text: String?
     var key: String?; var windowTitle: String?
     var strictElements = false
     var name: String?; var delay = 0.0; var timeout = 300.0; var index = 1
@@ -43,8 +46,13 @@ do {
         _ = try KeyStroke(args[1])
         key = args[1]; index = 2
     }
+    if action == "text" {
+        guard args.count > 1 else { throw TapperError("text requires a quoted string") }
+        _ = try TextInput.chunks(args[1])
+        text = args[1]; index = 2
+    }
     while index < args.count {
-        if args[index] == "--window", action == "key" {
+        if args[index] == "--window", action == "key" || action == "text" {
             guard index + 1 < args.count, !args[index + 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   windowTitle == nil else { throw TapperError("--window requires one exact Simulator title") }
             windowTitle = args[index + 1]; index += 2; continue
@@ -60,7 +68,7 @@ do {
         index += 2
     }
     let store = try Store()
-    let command = Command(action: action, recording: name, delay: delay, strictElements: strictElements, key: key, windowTitle: windowTitle)
+    let command = Command(action: action, recording: name, delay: delay, strictElements: strictElements, key: key, text: text, windowTitle: windowTitle)
     let request = store.inbox.appendingPathComponent("\(command.id).json")
     let response = store.outbox.appendingPathComponent("\(command.id).json")
     try store.write(command, at: request)

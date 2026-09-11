@@ -214,6 +214,56 @@ final class Controller: ObservableObject {
         }
     }
 
+    func sendText(_ text: String, windowTitle: String? = nil, completion: @escaping (Reply) -> Void) throws {
+        guard !recording, !playing else { throw TapperError("SimChoreographer is busy") }
+        let chunks = try TextInput.chunks(text)
+        guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else {
+            throw TapperError("SimChoreographer needs Accessibility and Input Monitoring permissions")
+        }
+        let available = Simulator.windows()
+        let matches = available.filter { windowTitle == nil || $0.title == windowTitle }
+        guard matches.count == 1, let window = matches.first else {
+            let choices = available.map(\.title).joined(separator: "; ")
+            throw TapperError("Text requires exactly one Simulator window. Use --window with an exact title. Available: \(choices.isEmpty ? "none" : choices)")
+        }
+        try beginCapture()
+        playing = true; let id = UUID(); runID = id
+        status = "Starting text input"
+        playback = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var sent = 0
+            let reply: Reply
+            do {
+                AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
+                window.app.activate(options: .activateIgnoringOtherApps)
+                try await self.sleep(0.5)
+                for chunk in chunks {
+                    try Task.checkCancellation()
+                    guard AXIsProcessTrusted(), Simulator.frame(window.element) != nil,
+                          Simulator.hasKeyboardFocus(window) else {
+                        throw TapperError("Simulator keyboard focus changed or permission was revoked")
+                    }
+                    let events = try TextInput.events(chunk)
+                    events.forEach { $0.post(tap: .cghidEventTap) }
+                    sent += chunk.count
+                    self.status = "Sending text · \(sent)/\(text.utf16.count) UTF-16 units"
+                    // Let the app process input and allow Stop/focus checks between batches.
+                    try await self.sleep(0.01)
+                }
+                reply = Reply(ok: true, message: "Sent text (\(sent) UTF-16 units) to \(window.title)")
+            } catch is CancellationError {
+                reply = Reply(ok: false, message: "Text input cancelled after \(sent) UTF-16 units; partial text may have been entered")
+            } catch {
+                reply = Reply(ok: false, message: "\(error.localizedDescription) · \(sent) UTF-16 units sent; partial text may have been entered")
+            }
+            if self.runID == id {
+                self.playing = false; self.playback = nil; self.runID = nil
+                self.endCapture(); self.status = reply.message
+            }
+            completion(reply)
+        }
+    }
+
     func run(_ sequence: Recording, delay: Double = 0, strictElements: Bool = false, completion: @escaping (Reply) -> Void = { _ in }) throws {
         guard !recording, !playing else { throw TapperError("SimChoreographer is busy") }
         guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else { throw TapperError("SimChoreographer needs Accessibility and Input Monitoring permissions") }
@@ -313,6 +363,10 @@ final class Controller: ObservableObject {
                 case "key":
                     guard let key = command.key else { respond(Reply(ok: false, message: "key requires a key name or shortcut")); continue }
                     do { try sendKey(key, windowTitle: command.windowTitle, completion: respond) }
+                    catch { respond(Reply(ok: false, message: error.localizedDescription)) }
+                case "text":
+                    guard let text = command.text else { respond(Reply(ok: false, message: "text requires a string")); continue }
+                    do { try sendText(text, windowTitle: command.windowTitle, completion: respond) }
                     catch { respond(Reply(ok: false, message: error.localizedDescription)) }
                 case "run":
                     let matches = recordings.filter { $0.id.uuidString.lowercased() == command.recording?.lowercased() || $0.name == command.recording }

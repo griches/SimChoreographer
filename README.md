@@ -90,6 +90,7 @@ Holds, drags, and presses containing keyboard input retain their original coordi
 ./build/simchoreographerctl run <recording-uuid>
 ./build/simchoreographerctl key return
 ./build/simchoreographerctl key cmd+a
+./build/simchoreographerctl text "Hello, world!"
 ./build/simchoreographerctl stop
 ```
 
@@ -111,6 +112,19 @@ The app activates the Simulator, checks keyboard focus, sends the press and rele
 Use **I/O → Keyboard → Connect Hardware Keyboard** in Simulator for iOS typing. Supported keys include letters, digits, Return/Enter, Tab, Escape, Space, Backspace/Delete, ForwardDelete, arrows, Home/End, PageUp/PageDown, F1–F12 and named punctuation; see `--help` for the full list. Modifiers are `cmd`/`command`, `ctrl`/`control`, `option`/`alt`, `shift` and `fn`. Names are case-insensitive: use `shift+a` to hold Shift, rather than uppercase `A`. Letter and punctuation names refer to physical US keyboard positions; the active keyboard layout determines the resulting character. This is a key press, not arbitrary text entry or a held-key duration. Simulator or macOS may handle shortcuts themselves.
 
 Both app permissions are required, and **Allow local AI agents to run sequences** also controls direct key requests. Success means the events were sent, not that the app handled them; the agent should verify the result. `--timeout` and JSON exit codes work as for `run`. The file command schema adds optional `key` and `windowTitle` fields for `action: "key"`.
+
+### Send a string
+
+```sh
+./build/simchoreographerctl text 'Hello, world!'
+./build/simchoreographerctl text 'Café ☕️' --window 'iPhone 17 – iOS 27.0'
+```
+
+Focus the intended text field first, then call `text`. SimChoreographer sends Unicode keyboard events in small batches, preserving spaces, case, punctuation and Unicode characters without using the clipboard. The command waits for completion and returns JSON with the usual exit codes. Unicode handling depends on the receiving app; verify the resulting field rather than treating event delivery as confirmation that the text was accepted. Newlines and tabs are passed through as text, but a field may handle them as submission or navigation; use `key return` or `key tab` for explicit key actions.
+
+The same agent toggle, permissions, single-window selection and busy-state checks apply as for `key`. Focus is checked between batches. `stop` or Command–Shift–Escape cancels the remaining text; text already entered is not undone, and the reply reports how many UTF-16 units were sent. Input is limited to 1–10,000 UTF-16 units; empty strings and NUL characters are rejected. `--timeout` does not cancel an in-progress request.
+
+Use shell quoting appropriate to your string, or pass the string as a single argument through an agent's subprocess API. Text is not added to saved recordings or echoed into the app status/reply, but it is present in the local command file until consumed (and may be visible in shell history/process arguments). The command schema adds optional `text` for `action: "text"`; `windowTitle` remains optional. No new permissions are required.
 
 ## Delete recordings
 
@@ -134,7 +148,7 @@ Right-button gestures, multi-touch/pinch gestures, held-key durations, and IME/t
 - Accessibility labels and identifiers can contain app content and are included in agent list replies. The inspector does not read element values such as text-field contents.
 - No screen capture permission is requested and no screenshots are recorded.
 - Sequence names, Simulator window titles, coordinates, key codes, modifier flags, timing, and captured accessibility metadata are stored in `~/Library/Application Support/Tapper/recordings.json`.
-- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback or direct key presses. It is enabled by default on launch and can be disabled for the current session.
+- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback or direct key/text input. It is enabled by default on launch and can be disabled for the current session.
 - Delete sequences in the app, or quit SimChoreographer and remove its Application Support folder to erase all saved data. Replies from timed-out clients can remain in `replies/` and may be deleted when the app is closed.
 
 ## Signing and macOS permissions
