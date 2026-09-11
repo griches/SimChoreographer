@@ -12,13 +12,6 @@ cd SimChoreographer
 ./scripts/build.sh && open build/SimChoreographer.app
 ```
 
-If you already cloned the repository, update and rebuild inside that folder:
-
-```sh
-git pull --ff-only
-./scripts/build.sh && open build/SimChoreographer.app
-```
-
 The app is created only after the build succeeds. The `&&` prevents trying to open a missing app if a build fails. The build also produces `build/simchoreographerctl`. Open `Package.swift` in Xcode to edit the project; launch the bundled app for permission setup rather than the bare Swift executable.
 
 ### Signing and macOS permissions
@@ -70,7 +63,7 @@ Select a recording and use **Delete recording** below the sidebar, press Delete 
 
 ## Agent interface
 
-Enable **Allow local AI agents to run sequences** in SimChoreographer each launch. The app must remain open.
+**Allow local AI agents to run sequences** is enabled by default each launch. The app must remain open. You can turn the toggle off to disable agent access for the current session.
 
 ```sh
 ./build/simchoreographerctl list
@@ -90,7 +83,7 @@ Responses are JSON. `run` waits until playback finishes. Exit codes: `0` success
 - Input Monitoring listens for mouse down/drag/up and keyboard events only while recording or replaying. Key codes and modifiers are saved only while the selected Simulator window has keyboard focus. The stop shortcut is never saved. These records can reveal typed text; avoid entering passwords or other secrets during recording.
 - No screen capture permission is requested and no screenshots are recorded.
 - Sequence names, Simulator window titles, coordinates, key codes, modifier flags, and timing are stored in `~/Library/Application Support/Tapper/recordings.json`.
-- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback. It is disabled on launch.
+- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback. It is enabled by default on launch and can be disabled for the current session.
 - Delete sequences in the app, or quit SimChoreographer and remove its Application Support folder to erase all saved data. Replies from timed-out clients can remain in `replies/` and may be deleted when the app is closed.
 
 ## Validation

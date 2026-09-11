@@ -14,7 +14,7 @@ do {
         simchoreographerctl run <name-or-uuid> [--delay seconds] [--timeout seconds]
         simchoreographerctl stop
 
-        Open SimChoreographer and enable local agent control first.
+        Open SimChoreographer first. Local agent control is enabled by default.
         run waits for completion; exit 0 = success, 1 = failure, 2 = timeout.
         Timeout does not cancel playback. Use simchoreographerctl stop to cancel.
         """)

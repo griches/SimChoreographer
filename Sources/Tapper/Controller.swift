@@ -13,7 +13,7 @@ final class Controller: ObservableObject {
     @Published var count = 0
     @Published var accessibility = false
     @Published var monitoring = false
-    @Published var agentEnabled = false
+    @Published var agentEnabled = true
     @Published var deletedRecording: (recording: Recording, index: Int)?
     let store: Store?
     private var draft: Recording?

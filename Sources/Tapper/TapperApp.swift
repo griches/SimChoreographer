@@ -121,7 +121,7 @@ struct ContentView: View {
                     }
                     Divider()
                     Toggle("Allow local AI agents to run sequences", isOn: $model.agentEnabled)
-                    Text("Agent control is off each launch. When enabled, programs running as your Mac user can list and replay sequences or stop playback. Recorded keys and modifiers are stored locally and can reveal what you type. Avoid entering secrets while recording. No network server or screenshots.")
+                    Text("Agent control is on by default each launch. Turn it off here to disable access for this session. When enabled, programs running as your Mac user can list and replay sequences or stop playback. Recorded keys and modifiers are stored locally and can reveal what you type. Avoid entering secrets while recording. No network server or screenshots.")
                         .font(.caption).foregroundStyle(.secondary)
                     Label(model.status, systemImage: model.recording ? "record.circle.fill" : model.playing ? "play.circle.fill" : "info.circle")
                         .foregroundStyle(model.recording ? .red : .primary).textSelection(.enabled)
