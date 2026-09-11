@@ -128,8 +128,11 @@ public struct Command: Codable {
     public var recording: String?
     public var delay: Double
     public var strictElements: Bool?
+    public var key: String?
+    public var windowTitle: String?
     public var expires: Date
-    public init(action: String, recording: String? = nil, delay: Double = 0, strictElements: Bool = false) {
+    public init(action: String, recording: String? = nil, delay: Double = 0, strictElements: Bool = false, key: String? = nil, windowTitle: String? = nil) {
+        self.key = key; self.windowTitle = windowTitle
         self.strictElements = strictElements
         id = UUID(); self.action = action; self.recording = recording; self.delay = delay
         expires = Date().addingTimeInterval(10)

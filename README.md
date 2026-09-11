@@ -88,10 +88,29 @@ Holds, drags, and presses containing keyboard input retain their original coordi
 ./build/simchoreographerctl run "Login flow" --delay 3 --timeout 120
 ./build/simchoreographerctl run "Login flow" --strict-elements
 ./build/simchoreographerctl run <recording-uuid>
+./build/simchoreographerctl key return
+./build/simchoreographerctl key cmd+a
 ./build/simchoreographerctl stop
 ```
 
 Responses are JSON. `run` waits until playback finishes. Exit codes: `0` success, `1` failure/cancellation, `2` timeout. Duplicate names require a recording UUID. Timeout does **not** cancel playback; issue `stop` to cancel. Commands not picked up within ten seconds expire, preventing an old queued run from starting on a later launch. A run completion means input events were posted, not that the app reached an expected state. Agents should verify results separately using screenshots, accessibility, or XCTest assertions.
+
+### Send a key without recording
+
+An AI agent can send a single key or shortcut directly through SimChoreographer:
+
+```sh
+./build/simchoreographerctl key return
+./build/simchoreographerctl key shift+tab
+./build/simchoreographerctl key cmd+a
+./build/simchoreographerctl key escape --window "iPhone 17 – iOS 27.0"
+```
+
+The app activates the Simulator, checks keyboard focus, sends the press and release (including modifier releases), and returns JSON. Nothing is added to saved recordings. Exactly one Simulator window must match; with multiple windows, supply its exact title using `--window`. Requests are rejected while recording or playback is active, when agent control is off, or if permissions/focus checks fail. `stop` or Command–Shift–Escape can cancel before delivery.
+
+Use **I/O → Keyboard → Connect Hardware Keyboard** in Simulator for iOS typing. Supported keys include letters, digits, Return/Enter, Tab, Escape, Space, Backspace/Delete, ForwardDelete, arrows, Home/End, PageUp/PageDown, F1–F12 and named punctuation; see `--help` for the full list. Modifiers are `cmd`/`command`, `ctrl`/`control`, `option`/`alt`, `shift` and `fn`. Names are case-insensitive: use `shift+a` to hold Shift, rather than uppercase `A`. Letter and punctuation names refer to physical US keyboard positions; the active keyboard layout determines the resulting character. This is a key press, not arbitrary text entry or a held-key duration. Simulator or macOS may handle shortcuts themselves.
+
+Both app permissions are required, and **Allow local AI agents to run sequences** also controls direct key requests. Success means the events were sent, not that the app handled them; the agent should verify the result. `--timeout` and JSON exit codes work as for `run`. The file command schema adds optional `key` and `windowTitle` fields for `action: "key"`.
 
 ## Delete recordings
 
@@ -115,7 +134,7 @@ Right-button gestures, multi-touch/pinch gestures, held-key durations, and IME/t
 - Accessibility labels and identifiers can contain app content and are included in agent list replies. The inspector does not read element values such as text-field contents.
 - No screen capture permission is requested and no screenshots are recorded.
 - Sequence names, Simulator window titles, coordinates, key codes, modifier flags, timing, and captured accessibility metadata are stored in `~/Library/Application Support/Tapper/recordings.json`.
-- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback. It is enabled by default on launch and can be disabled for the current session.
+- The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback or direct key presses. It is enabled by default on launch and can be disabled for the current session.
 - Delete sequences in the app, or quit SimChoreographer and remove its Application Support folder to erase all saved data. Replies from timed-out clients can remain in `replies/` and may be deleted when the app is closed.
 
 ## Signing and macOS permissions

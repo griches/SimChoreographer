@@ -191,6 +191,29 @@ final class Controller: ObservableObject {
             status = "Restored \(deletedRecording.recording.name)"
         } catch { status = error.localizedDescription }
     }
+    /// Reuse normal playback's activation, focus checks, cancellation and paired
+    /// key events. The temporary sequence never enters the saved recordings list.
+    func sendKey(_ shortcut: String, windowTitle: String? = nil, completion: @escaping (Reply) -> Void) throws {
+        guard !recording, !playing else { throw TapperError("SimChoreographer is busy") }
+        let stroke = try KeyStroke(shortcut)
+        guard AXIsProcessTrusted() else { throw TapperError("Enable Accessibility in SimChoreographer") }
+        let available = Simulator.windows()
+        let matches = available.filter { windowTitle == nil || $0.title == windowTitle }
+        guard matches.count == 1, let window = matches.first else {
+            let choices = available.map(\.title).joined(separator: "; ")
+            throw TapperError("Key press requires exactly one Simulator window. Use --window with an exact title. Available: \(choices.isEmpty ? "none" : choices)")
+        }
+        var sequence = Recording(name: "Key \(shortcut)", windowTitle: window.title, width: window.frame.width, height: window.frame.height)
+        sequence.taps = [Tap(keyCode: stroke.keyCode, modifiers: stroke.modifiers, delay: 0)]
+        try run(sequence) { reply in
+            if reply.ok {
+                let message = "Sent \(shortcut) to \(window.title)"
+                self.status = message
+                completion(Reply(ok: true, message: message))
+            } else { completion(reply) }
+        }
+    }
+
     func run(_ sequence: Recording, delay: Double = 0, strictElements: Bool = false, completion: @escaping (Reply) -> Void = { _ in }) throws {
         guard !recording, !playing else { throw TapperError("SimChoreographer is busy") }
         guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else { throw TapperError("SimChoreographer needs Accessibility and Input Monitoring permissions") }
@@ -287,6 +310,10 @@ final class Controller: ObservableObject {
                 case "status": respond(Reply(ok: true, message: status))
                 case "list": respond(Reply(ok: true, message: "Saved sequences", recordings: recordings))
                 case "stop": stop(); respond(Reply(ok: true, message: "Stop requested"))
+                case "key":
+                    guard let key = command.key else { respond(Reply(ok: false, message: "key requires a key name or shortcut")); continue }
+                    do { try sendKey(key, windowTitle: command.windowTitle, completion: respond) }
+                    catch { respond(Reply(ok: false, message: error.localizedDescription)) }
                 case "run":
                     let matches = recordings.filter { $0.id.uuidString.lowercased() == command.recording?.lowercased() || $0.name == command.recording }
                     guard matches.count == 1, let sequence = matches.first else { respond(Reply(ok: false, message: "Sequence missing or name ambiguous; use its UUID")); continue }

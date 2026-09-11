@@ -12,23 +12,43 @@ do {
         simchoreographerctl list
         simchoreographerctl status
         simchoreographerctl run <name-or-uuid> [--delay seconds] [--timeout seconds] [--strict-elements]
+        simchoreographerctl key <key-or-shortcut> [--window "exact Simulator title"] [--timeout seconds]
         simchoreographerctl stop
 
+        Key examples: return, tab, escape, space, backspace, left, shift+tab, cmd+a.
+        Keys: a-z, 0-9, f1-f12, up/down/left/right, home/end, pageup/pagedown,
+        return/enter, tab, space, escape/esc, backspace/delete, forwarddelete,
+        equals, minus, leftbracket, rightbracket, quote, semicolon, backslash,
+        comma, slash, period, grave. Modifiers: cmd, ctrl, option/alt, shift, fn.
+        Names are case-insensitive physical US key positions; use shift+a for Shift+A.
+        With multiple Simulator windows, key requires --window.
+
         Open SimChoreographer first. Local agent control is enabled by default.
-        run waits for completion; exit 0 = success, 1 = failure, 2 = timeout.
+        run and key wait for completion; exit 0 = success, 1 = failure, 2 = timeout.
         Timeout does not cancel playback. Use simchoreographerctl stop to cancel.
         """)
         exit(0)
     }
     let action = args[0]
-    guard ["list", "status", "run", "stop"].contains(action) else { throw TapperError("Unknown command; use --help") }
+    guard ["list", "status", "run", "stop", "key"].contains(action) else { throw TapperError("Unknown command; use --help") }
+    var key: String?; var windowTitle: String?
     var strictElements = false
     var name: String?; var delay = 0.0; var timeout = 300.0; var index = 1
     if action == "run" {
         guard args.count > 1 else { throw TapperError("run requires a sequence name or UUID") }
         name = args[1]; index = 2
     }
+    if action == "key" {
+        guard args.count > 1 else { throw TapperError("key requires a key name or shortcut") }
+        _ = try KeyStroke(args[1])
+        key = args[1]; index = 2
+    }
     while index < args.count {
+        if args[index] == "--window", action == "key" {
+            guard index + 1 < args.count, !args[index + 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  windowTitle == nil else { throw TapperError("--window requires one exact Simulator title") }
+            windowTitle = args[index + 1]; index += 2; continue
+        }
         if args[index] == "--strict-elements", action == "run" { strictElements = true; index += 1; continue }
         guard index + 1 < args.count, let value = Double(args[index + 1]), value.isFinite,
               value >= 0, value <= 86400 else { throw TapperError("Invalid option value") }
@@ -40,7 +60,7 @@ do {
         index += 2
     }
     let store = try Store()
-    let command = Command(action: action, recording: name, delay: delay, strictElements: strictElements)
+    let command = Command(action: action, recording: name, delay: delay, strictElements: strictElements, key: key, windowTitle: windowTitle)
     let request = store.inbox.appendingPathComponent("\(command.id).json")
     let response = store.outbox.appendingPathComponent("\(command.id).json")
     try store.write(command, at: request)
