@@ -2,6 +2,25 @@ import Foundation
 
 public enum MousePhase: String, Codable { case down, drag, up }
 
+/// A best-effort snapshot of the accessibility element at mouse-down.
+/// Direct matches can relocate ordinary taps during playback.
+public struct ElementSnapshot: Codable, Equatable {
+    public var label: String?
+    public var identifier: String?
+    public var role: String?
+    public var ancestorDepth: Int
+    public init(label: String? = nil, identifier: String? = nil, role: String? = nil, ancestorDepth: Int = 0) {
+        func clean(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return String(text.prefix(512))
+        }
+        self.label = clean(label); self.identifier = clean(identifier); self.role = clean(role)
+        self.ancestorDepth = ancestorDepth
+    }
+    public var hasName: Bool { label != nil || identifier != nil }
+    public var title: String { label ?? identifier ?? "Unlabelled element" }
+}
+
 public struct Tap: Codable, Equatable {
     public var x: Double
     public var y: Double
@@ -10,6 +29,7 @@ public struct Tap: Codable, Equatable {
     public var keyCode: UInt16?
     public var modifiers: UInt64?
     public var mousePhase: MousePhase?
+    public var element: ElementSnapshot?
     public init(x: Double, y: Double, phase: MousePhase, delay: Double) {
         self.x = x; self.y = y; self.mousePhase = phase; self.delay = delay
     }
@@ -107,8 +127,10 @@ public struct Command: Codable {
     public var action: String
     public var recording: String?
     public var delay: Double
+    public var strictElements: Bool?
     public var expires: Date
-    public init(action: String, recording: String? = nil, delay: Double = 0) {
+    public init(action: String, recording: String? = nil, delay: Double = 0, strictElements: Bool = false) {
+        self.strictElements = strictElements
         id = UUID(); self.action = action; self.recording = recording; self.delay = delay
         expires = Date().addingTimeInterval(10)
     }

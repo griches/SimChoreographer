@@ -11,7 +11,7 @@ do {
         print("""
         simchoreographerctl list
         simchoreographerctl status
-        simchoreographerctl run <name-or-uuid> [--delay seconds] [--timeout seconds]
+        simchoreographerctl run <name-or-uuid> [--delay seconds] [--timeout seconds] [--strict-elements]
         simchoreographerctl stop
 
         Open SimChoreographer first. Local agent control is enabled by default.
@@ -22,12 +22,14 @@ do {
     }
     let action = args[0]
     guard ["list", "status", "run", "stop"].contains(action) else { throw TapperError("Unknown command; use --help") }
+    var strictElements = false
     var name: String?; var delay = 0.0; var timeout = 300.0; var index = 1
     if action == "run" {
         guard args.count > 1 else { throw TapperError("run requires a sequence name or UUID") }
         name = args[1]; index = 2
     }
     while index < args.count {
+        if args[index] == "--strict-elements", action == "run" { strictElements = true; index += 1; continue }
         guard index + 1 < args.count, let value = Double(args[index + 1]), value.isFinite,
               value >= 0, value <= 86400 else { throw TapperError("Invalid option value") }
         switch args[index] {
@@ -38,7 +40,7 @@ do {
         index += 2
     }
     let store = try Store()
-    let command = Command(action: action, recording: name, delay: delay)
+    let command = Command(action: action, recording: name, delay: delay, strictElements: strictElements)
     let request = store.inbox.appendingPathComponent("\(command.id).json")
     let response = store.outbox.appendingPathComponent("\(command.id).json")
     try store.write(command, at: request)

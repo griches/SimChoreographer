@@ -15,6 +15,7 @@ We built SimChoreographer to turn a demonstrated interaction into a named comman
 - **Record by doing.** Navigate in Simulator as usual; no flow file to write before the first replay.
 - **Use your existing app build.** No SDK, app instrumentation, or accessibility identifiers need adding to the iOS app.
 - **Include the interaction that matters.** Record typing, scrolling by dragging, long presses, and hold-and-drag paths alongside taps.
+- **Follow controls as they move.** Ordinary taps prefer a unique accessibility identifier or label/type match; strict mode stops when a target cannot be resolved.
 - **Call it from an agent.** The CLI waits for playback to finish and returns JSON with a success or failure exit code.
 - **Keep the workflow local.** No account, hosted service, or third-party runtime dependency. Recordings remain on your Mac.
 
@@ -60,6 +61,22 @@ Coordinates are stored in window-relative macOS points. Moving the window betwee
 
 Keyboard recording supports typing, Return, Tab, arrows, and shortcuts with Command, Shift, Option, or Control. Each captured key-down (including repeat) replays as a complete press and release. Use the same Mac keyboard layout and enable Simulator’s **I/O → Keyboard → Connect Hardware Keyboard** for iOS typing. Simulator/macOS may handle shortcuts themselves. Playback stops if the selected Simulator window loses keyboard focus or opens a modal sheet. Existing tap-only recordings remain compatible; mixed recordings retain the `taps` JSON array with optional `keyCode`, `modifiers`, and `mousePhase` fields. New pointer events use `mousePhase: "down"`, `"drag"`, or `"up"`; absent `mousePhase` retains legacy click behavior. Recordings are limited to 10,000 total input events (each drag sample counts).
 
+## Accessibility action map
+
+While recording, **Last tapped element** shows the best-effort label, accessibility identifier and control type of the element under your last press. Select a saved sequence and expand **Recorded action map** to review its presses and key events. Details are captured on mouse-down, before a tap normally navigates away; drag samples do not trigger repeated inspection.
+
+If the hit element has no label or identifier, SimChoreographer checks up to four enclosing elements within the same window. Such results are marked as coming from an enclosing element. Inspection has a short time budget; unavailable details do not stop recording. Custom views or incomplete Simulator accessibility trees may expose only a type or no useful details. Older recordings remain playable but have no captured metadata; record a new sequence to add it.
+
+`simchoreographerctl list` includes optional `element` objects on recorded mouse-down events, with `label`, `identifier`, `role`, and `ancestorDepth` fields. This gives an agent context for the recorded route. It is a snapshot of the elements you pressed, not a complete live screen tree, and ordinary taps now prefer a unique accessibility match before falling back to coordinates. No changes to the iOS app are required; descriptive accessibility labels and stable identifiers improve the results.
+
+### Element-first playback
+
+For ordinary taps, replay searches the selected Simulator window for the recorded identifier first, then a unique exact label + control type. It taps the matched element’s current centre, keeping press and release at the same point. Duplicate identifiers are treated as ambiguous; an incomplete or timed-out search never counts as a unique match. Off-screen, disabled or covered targets are rejected. There is no automatic scrolling.
+
+By default, a missing or ambiguous target falls back to the recorded coordinates. Enable **Strict element targeting for taps** beside Replay, or pass `--strict-elements` to the CLI, to stop instead. Strict mode also stops on ordinary taps without metadata, including old recordings. Metadata borrowed from enclosing elements is descriptive only and cannot relocate a tap. Completion replies report element targets and coordinate fallbacks.
+
+Holds, drags, and presses containing keyboard input retain their original coordinates and paths, including in strict mode. Device/window size checks still apply. Lookup may add time between actions; screenshot or assertion checks remain the agent’s responsibility.
+
 ## Agent interface
 
 **Allow local AI agents to run sequences** is enabled by default each launch. The app must remain open. You can turn the toggle off to disable agent access for the current session.
@@ -69,6 +86,7 @@ Keyboard recording supports typing, Return, Tab, arrows, and shortcuts with Comm
 ./build/simchoreographerctl status
 ./build/simchoreographerctl run "Login flow"
 ./build/simchoreographerctl run "Login flow" --delay 3 --timeout 120
+./build/simchoreographerctl run "Login flow" --strict-elements
 ./build/simchoreographerctl run <recording-uuid>
 ./build/simchoreographerctl stop
 ```
@@ -83,7 +101,7 @@ Select a recording and use **Delete recording** below the sidebar, press Delete 
 
 Use the same Simulator device, orientation, scale, window size, and keyboard layout. Start each run on the same page with the same test data and login state. Moving the Simulator window between runs is supported; resizing it requires a new recording.
 
-Playback uses window-relative coordinates and recorded delays. If a change moves a control along the route, record the route again. Allow time for loading and animations, and have the agent verify the target page before judging its screenshot. This makes the tool best suited to short, stable routes during local development.
+Ordinary taps prefer accessibility targets; coordinate fallback and gestures use window-relative coordinates. If a control moves and has no reliable accessibility match, record the route again. Allow time for loading and animations, and have the agent verify the target page before judging its screenshot. This makes the tool best suited to short, stable routes during local development.
 
 The Simulator must be available in the foreground during playback, which uses the Mac’s actual pointer and keyboard input. Avoid interacting with the Mac while a sequence runs. **Command–Shift–Escape** stops playback, including a pending delay or held gesture.
 
@@ -92,10 +110,11 @@ Right-button gestures, multi-touch/pinch gestures, held-key durations, and IME/t
 ## Privacy
 
 - No network service, telemetry, cloud storage, or third-party dependencies.
-- Accessibility is used to find Simulator windows, check click targets, and post mouse and keyboard events.
+- Accessibility is used to find Simulator windows, check click targets, read their labels/identifiers/types, and post mouse and keyboard events.
 - Input Monitoring listens for mouse down/drag/up and keyboard events only while recording or replaying. Key codes and modifiers are saved only while the selected Simulator window has keyboard focus. The stop shortcut is never saved. These records can reveal typed text; avoid entering passwords or other secrets during recording.
+- Accessibility labels and identifiers can contain app content and are included in agent list replies. The inspector does not read element values such as text-field contents.
 - No screen capture permission is requested and no screenshots are recorded.
-- Sequence names, Simulator window titles, coordinates, key codes, modifier flags, and timing are stored in `~/Library/Application Support/Tapper/recordings.json`.
+- Sequence names, Simulator window titles, coordinates, key codes, modifier flags, timing, and captured accessibility metadata are stored in `~/Library/Application Support/Tapper/recordings.json`.
 - The same folder holds command/reply files. Directories use mode `700`; files use `600`. Agent control permits programs running under your user account to request playback. It is enabled by default on launch and can be disabled for the current session.
 - Delete sequences in the app, or quit SimChoreographer and remove its Application Support folder to erase all saved data. Replies from timed-out clients can remain in `replies/` and may be deleted when the app is closed.
 
@@ -135,8 +154,9 @@ swift test
 ./scripts/build.sh
 ```
 
-Automated tests cover coordinate/timing validation, storage round trips, file permissions, and preservation of corrupt storage. Manual validation with macOS permissions granted is required for actual recording and replay:
+Automated tests cover coordinate/timing validation, storage round trips, file permissions, preservation of corrupt storage, accessibility metadata compatibility, identifier/label matching, ambiguous and incomplete searches, ordinary-tap classification, and strict-mode command compatibility. Manual validation with macOS permissions granted is required for actual recording and replay:
 
+- Record taps on labelled buttons and an unlabelled area; check **Last tapped element**, the saved **Recorded action map**, and `simchoreographerctl list`. Enclosing-element fallbacks should be marked.
 - Record a tap into a text field, type mixed-case text, press Tab/Return, and stop using the global shortcut while Simulator is active.
 - Switch to another Simulator window or app while recording; confirm its typing is excluded.
 - Replay a shortcut and cancel during a delay; confirm no modifiers remain held.
@@ -144,6 +164,7 @@ Automated tests cover coordinate/timing validation, storage round trips, file pe
 - Record and replay a swipe, a stationary long press, and a hold followed by dragging.
 - Cancel playback during a long hold and verify the mouse button is released.
 - Stop recording during a drag and verify only the unfinished gesture is discarded.
+- Move a labelled control within the same-sized app window and replay: verify the tap follows it. Test duplicate/missing labels with strict mode (stop) and default mode (coordinate fallback).
 - Relaunch SimChoreographer and replay the saved sequence from both UI and CLI.
 - Move the Simulator window and repeat; resize it and confirm rejection.
 - Cover the tap location or switch focus during a delay and confirm playback stops.

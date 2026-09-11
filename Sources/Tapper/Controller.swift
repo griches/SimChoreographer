@@ -11,6 +11,8 @@ final class Controller: ObservableObject {
     @Published var recording = false
     @Published var playing = false
     @Published var count = 0
+    @Published var lastElement: ElementSnapshot?
+    @Published var inspectedTap = false
     @Published var accessibility = false
     @Published var monitoring = false
     @Published var agentEnabled = true
@@ -110,10 +112,13 @@ final class Controller: ObservableObject {
         let point = event.location
         let time = ProcessInfo.processInfo.systemUptime
         if type == .leftMouseDown {
-            guard frame.contains(point), Simulator.isTarget(target, at: point) else { return }
+            guard frame.contains(point), let hit = Simulator.hitElement(target, at: point) else { return }
             guard !recordingMouseHeld else { stop(message: "Stopped: unexpected mouse press"); return }
             recordingMouseHeld = true; recordingGestureFrame = frame
-            append(Tap(x: point.x - frame.minX, y: point.y - frame.minY, phase: .down, delay: 0), at: time)
+            var input = Tap(x: point.x - frame.minX, y: point.y - frame.minY, phase: .down, delay: 0)
+            input.element = Simulator.snapshot(hit, in: target)
+            lastElement = input.element; inspectedTap = true
+            append(input, at: time)
         } else if type == .leftMouseDragged || type == .leftMouseUp {
             guard recordingMouseHeld else { return }
             guard frame == recordingGestureFrame, frame.contains(point), Simulator.isTarget(target, at: point) else {
@@ -146,6 +151,7 @@ final class Controller: ObservableObject {
             guard !trimmed.isEmpty else { throw TapperError("Enter a sequence name") }
             try beginCapture()
             target = window; draft = Recording(name: trimmed, windowTitle: window.title, width: window.frame.width, height: window.frame.height)
+            lastElement = nil; inspectedTap = false
             count = 0; lastEvent = 0; recording = true; status = "Recording · click, hold, drag, or type in Simulator · ⌘⇧Esc to save"
             AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
             window.app.activate(options: .activateIgnoringOtherApps)
@@ -185,7 +191,7 @@ final class Controller: ObservableObject {
             status = "Restored \(deletedRecording.recording.name)"
         } catch { status = error.localizedDescription }
     }
-    func run(_ sequence: Recording, delay: Double = 0, completion: @escaping (Reply) -> Void = { _ in }) throws {
+    func run(_ sequence: Recording, delay: Double = 0, strictElements: Bool = false, completion: @escaping (Reply) -> Void = { _ in }) throws {
         guard !recording, !playing else { throw TapperError("SimChoreographer is busy") }
         guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else { throw TapperError("SimChoreographer needs Accessibility and Input Monitoring permissions") }
         try sequence.validate()
@@ -206,6 +212,9 @@ final class Controller: ObservableObject {
                 AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
                 window.app.activate(options: .activateIgnoringOtherApps)
                 try await self.sleep(0.5)
+                let ordinary = ElementTargeting.ordinaryTaps(sequence.taps)
+                var relocated: (end: Int, point: CGPoint)?
+                var matched = 0, fallbacks = 0
                 for (index, tap) in sequence.taps.enumerated() {
                     try await self.sleep(tap.delay)
                     try Task.checkCancellation()
@@ -218,7 +227,24 @@ final class Controller: ObservableObject {
                         let events = try Keyboard.events(keyCode: keyCode, modifiers: tap.modifiers ?? 0)
                         events.forEach { $0.post(tap: .cghidEventTap) }
                     } else {
-                    let point = CGPoint(x: rect.minX + tap.x, y: rect.minY + tap.y)
+                    var point = CGPoint(x: rect.minX + tap.x, y: rect.minY + tap.y)
+                    if let end = ordinary[index] {
+                        do {
+                            point = try await Simulator.locate(tap.element, in: window)
+                            matched += 1
+                            relocated = (end, point)
+                        } catch is CancellationError { throw CancellationError() }
+                        catch {
+                            if strictElements { throw TapperError("Event \(index + 1): \(error.localizedDescription). Strict element targeting stopped playback.") }
+                            fallbacks += 1
+                        }
+                        try Task.checkCancellation()
+                        guard Simulator.frame(window.element) == rect else { throw TapperError("Simulator moved during element lookup") }
+                    }
+                    // Keep down, jitter samples and release at the same resolved point.
+                    // Do not look up again after mouse-down may have changed the screen.
+                    if let resolved = relocated, index <= resolved.end { point = resolved.point }
+                    if relocated?.end == index { relocated = nil }
                     guard Simulator.isTarget(window, at: point) else { throw TapperError("Simulator lost focus or the tap is covered by another window") }
                     if mouse.isHeld, rect != self.playbackGestureFrame { throw TapperError("Simulator moved during a gesture") }
                     try mouse.send(tap.mousePhase, at: point)
@@ -226,7 +252,7 @@ final class Controller: ObservableObject {
                     }
                     self.status = "Playing \(sequence.name) · \(index + 1)/\(sequence.taps.count)"
                 }
-                reply = Reply(ok: true, message: "Completed \(sequence.summary)")
+                reply = Reply(ok: true, message: "Completed \(sequence.summary) · \(matched) element targets · \(fallbacks) coordinate fallbacks")
             } catch is CancellationError { reply = Reply(ok: false, message: "Playback cancelled") }
             catch { reply = Reply(ok: false, message: error.localizedDescription) }
             mouse.release()
@@ -264,7 +290,7 @@ final class Controller: ObservableObject {
                 case "run":
                     let matches = recordings.filter { $0.id.uuidString.lowercased() == command.recording?.lowercased() || $0.name == command.recording }
                     guard matches.count == 1, let sequence = matches.first else { respond(Reply(ok: false, message: "Sequence missing or name ambiguous; use its UUID")); continue }
-                    do { try run(sequence, delay: command.delay, completion: respond) }
+                    do { try run(sequence, delay: command.delay, strictElements: command.strictElements ?? false, completion: respond) }
                     catch { respond(Reply(ok: false, message: error.localizedDescription)) }
                 default: respond(Reply(ok: false, message: "Unknown command"))
                 }
